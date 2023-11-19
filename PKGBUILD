@@ -109,7 +109,7 @@ provides=(
   ffmpeg4.4
 )
 conflicts=($pkgname ffmpeg4.4)
-options=(!lto debug strip)
+options=(!lto strip)
 
 _tag=71fb6132637a2a430375c24afc381fff8b854fe7
 
