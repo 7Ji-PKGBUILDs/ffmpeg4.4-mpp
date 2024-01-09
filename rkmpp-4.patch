@@ -340,7 +340,7 @@ index 365bacd771..e194c1df24 100644
          av_log(ctx, AV_LOG_VERBOSE,
                 "Querying the device for the current frame size\n");
 -- 
-2.41.0
+2.43.0
 
 
 From 25de40876e8e9d3868f22dc37ac492b64be186a0 Mon Sep 17 00:00:00 2001
@@ -366,7 +366,7 @@ index b5b4448a31..1926179fdc 100644
      { AV_PIX_FMT_NONE,    AV_CODEC_ID_MJPEG,    V4L2_PIX_FMT_MJPEG   },
      { AV_PIX_FMT_NONE,    AV_CODEC_ID_MJPEG,    V4L2_PIX_FMT_JPEG    },
 -- 
-2.41.0
+2.43.0
 
 
 From ebfac2ef875422a57955bd7c1f09c1b9d48d958a Mon Sep 17 00:00:00 2001
@@ -423,7 +423,7 @@ index e194c1df24..fc20da7ef7 100644
      { "list_formats", "list available formats and exit",                          OFFSET(list_format),  AV_OPT_TYPE_INT,    {.i64 = 0 },  0, INT_MAX, DEC, "list_formats" },
      { "all",          "show all available formats",                               OFFSET(list_format),  AV_OPT_TYPE_CONST,  {.i64 = V4L_ALLFORMATS  },    0, INT_MAX, DEC, "list_formats" },
 -- 
-2.41.0
+2.43.0
 
 
 From 287b4e0959df84cc293a03300e98a4fdb0193935 Mon Sep 17 00:00:00 2001
@@ -480,7 +480,7 @@ index fc20da7ef7..e5aa33e453 100644
          if (streamparm.parm.capture.capability & V4L2_CAP_TIMEPERFRAME) {
              tpf = &streamparm.parm.capture.timeperframe;
 -- 
-2.41.0
+2.43.0
 
 
 From 305e4e3c84e42368c41d3b9e9b814f0027c8f7f2 Mon Sep 17 00:00:00 2001
@@ -521,7 +521,7 @@ index e5aa33e453..9b64caecaa 100644
      { "list_formats", "list available formats and exit",                          OFFSET(list_format),  AV_OPT_TYPE_INT,    {.i64 = 0 },  0, INT_MAX, DEC, "list_formats" },
      { "all",          "show all available formats",                               OFFSET(list_format),  AV_OPT_TYPE_CONST,  {.i64 = V4L_ALLFORMATS  },    0, INT_MAX, DEC, "list_formats" },
 -- 
-2.41.0
+2.43.0
 
 
 From 204a6da5244c5905836c6542e4a3f4f78128ff18 Mon Sep 17 00:00:00 2001
@@ -1127,7 +1127,7 @@ index a60962dc86..0000000000
 -RKMPP_DEC(vp8,   AV_CODEC_ID_VP8,           NULL)
 -RKMPP_DEC(vp9,   AV_CODEC_ID_VP9,           NULL)
 -- 
-2.41.0
+2.43.0
 
 
 From e10c2ce641ed9e9018ee257679eaa3841d3c0f9f Mon Sep 17 00:00:00 2001
@@ -1304,7 +1304,7 @@ index b3d284d7d0..b9b821458a 100644
  OBJS-$(CONFIG_VP9_QSV_ENCODER)         += qsvenc_vp9.o
  OBJS-$(CONFIG_VPLAYER_DECODER)         += textdec.o ass.o
 -- 
-2.41.0
+2.43.0
 
 
 From f19e87b3dc632156cc0fc9eec9949a6e1e8cddf7 Mon Sep 17 00:00:00 2001
@@ -1365,7 +1365,7 @@ index 2e9a3581de..03a07aaa41 100644
  extern AVCodec ff_vqa_decoder;
  extern AVCodec ff_webp_decoder;
 -- 
-2.41.0
+2.43.0
 
 
 From 6852941a67515c3cb337804679706797575e1fb2 Mon Sep 17 00:00:00 2001
@@ -3617,21 +3617,21 @@ index 0000000000..f52d29228b
 +int import_mpp_to_drm(AVCodecContext *avctx, MppFrame mppframe, AVFrame *frame);
 +MppFrame get_mppframe_from_av(AVFrame *frame);
 -- 
-2.41.0
+2.43.0
 
 
-From f3fcb573fb6cf83dd5c9f144592fb047a575d833 Mon Sep 17 00:00:00 2001
+From 24f9794e4a6021a333b999d4c20628940867393d Mon Sep 17 00:00:00 2001
 From: boogie <boogiepop@gmx.com>
 Date: Mon, 24 Jul 2023 19:27:37 +0200
 Subject: [PATCH 10/13] lavu/hwcontext_drm: Add internal frame allocation
 
 ---
  libavutil/hwcontext_drm.c | 322 +++++++++++++++++++++++++++++++++++++-
- libavutil/hwcontext_drm.h |  14 +-
- 2 files changed, 328 insertions(+), 8 deletions(-)
+ libavutil/hwcontext_drm.h |  25 ++-
+ 2 files changed, 339 insertions(+), 8 deletions(-)
 
 diff --git a/libavutil/hwcontext_drm.c b/libavutil/hwcontext_drm.c
-index 7a9fdbd263..2d1962c9c0 100644
+index 7a9fdbd263..bdbd4c7914 100644
 --- a/libavutil/hwcontext_drm.c
 +++ b/libavutil/hwcontext_drm.c
 @@ -18,6 +18,7 @@
@@ -3817,16 +3817,16 @@ index 7a9fdbd263..2d1962c9c0 100644
 +}
 +
 +static void free_drm_frame_descriptor(AVDRMDeviceContext *hwctx,
-+                                      AVDRMFrameDescriptor *desc)
++                                      AVDRMCompatibleFrameDescriptor *desc)
 +{
 +    int i;
 +    if (!desc)
 +        return;
 +
-+    for (i = 0; i < desc->nb_objects; i++) {
-+        AVDRMObjectDescriptor *object = &desc->objects[i];
-+        if (object->ptr)
-+            drm_munmap(object->ptr, object->size);
++    for (i = 0; i < desc->drm_desc.nb_objects; i++) {
++        AVDRMObjectDescriptor *object = &desc->drm_desc.objects[i];
++        if (desc->opaque)
++            drm_munmap(desc->opaque, object->size);
 +        if (object->fd > 0) {
 +            int ret;
 +            uint32_t handle = 0;
@@ -3860,7 +3860,7 @@ index 7a9fdbd263..2d1962c9c0 100644
 +{
 +    AVHWFramesContext *hwfc = opaque;
 +    AVDRMDeviceContext *hwctx = hwfc->device_ctx->hwctx;
-+    AVDRMFrameDescriptor *desc = (AVDRMFrameDescriptor *)data;
++    AVDRMCompatibleFrameDescriptor *desc = (AVDRMFrameDescriptor *)data;
 +
 +    free_drm_frame_descriptor(hwctx, desc);
 +}
@@ -3870,7 +3870,7 @@ index 7a9fdbd263..2d1962c9c0 100644
 +    int ret;
 +    AVHWFramesContext *hwfc = opaque;
 +    AVDRMDeviceContext *hwctx = hwfc->device_ctx->hwctx;
-+    AVDRMFrameDescriptor *desc;
++    AVDRMCompatibleFrameDescriptor *desc;
 +    AVDRMLayerDescriptor *layer;
 +    AVBufferRef *ref;
 +
@@ -3896,10 +3896,10 @@ index 7a9fdbd263..2d1962c9c0 100644
 +    }
 +    av_assert0(dmcb.size >= dmcb.width * dmcb.height * dmcb.bpp / 8);
 +
-+    desc->nb_objects = 1;
-+    desc->nb_layers = 1;
++    desc->drm_desc.nb_objects = 1;
++    desc->drm_desc.nb_layers = 1;
 +    ret = drmPrimeHandleToFD(hwctx->fd, dmcb.handle, DRM_CLOEXEC | DRM_RDWR,
-+                             &desc->objects[0].fd);
++                             &desc->drm_desc.objects[0].fd);
 +    if (ret) {
 +        av_log(hwfc, AV_LOG_ERROR, "Failed to convert handle to fd: %m\n");
 +        goto fail;
@@ -3914,16 +3914,16 @@ index 7a9fdbd263..2d1962c9c0 100644
 +    }
 +
 +    // default read and write
-+    desc->objects[0].ptr = drm_mmap(NULL, dmcb.size, PROT_READ | PROT_WRITE,
++    desc->opaque = drm_mmap(NULL, dmcb.size, PROT_READ | PROT_WRITE,
 +                                    MAP_SHARED, hwctx->fd, dmmd.offset);
-+    if (desc->objects[0].ptr == MAP_FAILED) {
++    if (desc->opaque== MAP_FAILED) {
 +        av_log(hwfc, AV_LOG_ERROR, "Failed to drm_mmap: %m\n");
 +        goto fail;
 +    }
 +
-+    desc->objects[0].size = dmcb.size;
++    desc->drm_desc.objects[0].size = dmcb.size;
 +
-+    layer = &desc->layers[0];
++    layer = &desc->drm_desc.layers[0];
 +    for (i = 0; i < FF_ARRAY_ELEMS(supported_formats); i++) {
 +        if (supported_formats[i].pixfmt == hwfc->sw_format) {
 +            layer->format = supported_formats[i].drm_format;
@@ -4005,7 +4005,7 @@ index 7a9fdbd263..2d1962c9c0 100644
      .transfer_data_to       = &drm_transfer_data_to,
      .transfer_data_from     = &drm_transfer_data_from,
 diff --git a/libavutil/hwcontext_drm.h b/libavutil/hwcontext_drm.h
-index 42709f215e..80f2e8597e 100644
+index 42709f215e..6bac73d106 100644
 --- a/libavutil/hwcontext_drm.h
 +++ b/libavutil/hwcontext_drm.h
 @@ -25,11 +25,6 @@
@@ -4020,20 +4020,7 @@ index 42709f215e..80f2e8597e 100644
   */
  
  enum {
-@@ -50,6 +45,12 @@ typedef struct AVDRMObjectDescriptor {
-      * DRM PRIME fd for the object.
-      */
-     int fd;
-+    /**
-+     * DRM PRIME mapped virtual ptr for above fd.
-+     *
-+     * The content of this buffer must be readonly when acting decoder's out buffer.
-+     */
-+    void *ptr;
-     /**
-      * Total size of the object.
-      *
-@@ -141,10 +142,13 @@ typedef struct AVDRMFrameDescriptor {
+@@ -141,14 +136,34 @@ typedef struct AVDRMFrameDescriptor {
      AVDRMObjectDescriptor objects[AV_DRM_MAX_PLANES];
      /**
       * Number of layers in the frame.
@@ -4047,11 +4034,32 @@ index 42709f215e..80f2e8597e 100644
       */
      AVDRMLayerDescriptor layers[AV_DRM_MAX_PLANES];
  } AVDRMFrameDescriptor;
+ 
++/**
++ * DRM Compatible frame descriptor.
++ *
++ */
++typedef struct AVDRMCompatibleFrameDescriptor {
++    /**
++     * Backwards compatibility with AVDRMFrameDescriptor.
++     */
++    AVDRMFrameDescriptor drm_desc;
++
++    /**
++     * References to MppBuffer instances which are used
++     * on each drm frame index.
++     */
++    void* opaque;
++} AVDRMCompatibleFrameDescriptor;
++
+ /**
+  * DRM device.
+  *
 -- 
-2.41.0
+2.43.0
 
 
-From 51962528d54301898213fb92bb593a707f2bf87b Mon Sep 17 00:00:00 2001
+From e928bc4a28ec846f374ba7ffdd0dff951c967fa1 Mon Sep 17 00:00:00 2001
 From: boogie <boogiepop@gmx.com>
 Date: Mon, 24 Jul 2023 22:19:14 +0200
 Subject: [PATCH 11/13] add yuv444 & nv24 support for drm hwcontext
@@ -4061,7 +4069,7 @@ Subject: [PATCH 11/13] add yuv444 & nv24 support for drm hwcontext
  1 file changed, 2 insertions(+)
 
 diff --git a/libavutil/hwcontext_drm.c b/libavutil/hwcontext_drm.c
-index 2d1962c9c0..9210b6c9f5 100644
+index bdbd4c7914..afdaabed1b 100644
 --- a/libavutil/hwcontext_drm.c
 +++ b/libavutil/hwcontext_drm.c
 @@ -117,6 +117,8 @@ static const struct {
@@ -4074,10 +4082,10 @@ index 2d1962c9c0..9210b6c9f5 100644
      { AV_PIX_FMT_RGB555LE,  DRM_FORMAT_XRGB1555,    },
      { AV_PIX_FMT_RGB555BE,  DRM_FORMAT_XRGB1555 | DRM_FORMAT_BIG_ENDIAN },
 -- 
-2.41.0
+2.43.0
 
 
-From de5398097e8c3aa9f2ef69b50d8be63c87932a19 Mon Sep 17 00:00:00 2001
+From 7208a8c21c48cefa0961d3aed108eaba7d42b62d Mon Sep 17 00:00:00 2001
 From: boogie <boogiepop@gmx.com>
 Date: Fri, 28 Jul 2023 22:08:47 +0200
 Subject: [PATCH 12/13] add AV_PIX_FMT_NV15 definition as a placeholder to
@@ -4103,7 +4111,7 @@ index a33a139569..22bd4c2171 100644
          { .av = AV_PIX_FMT_BGR0,    .mpp = MPP_FMT_BGRA8888,       .drm = DRM_FORMAT_XRGB8888, .rga = RK_FORMAT_BGRX_8888},
          { .av = AV_PIX_FMT_BGRA,    .mpp = MPP_FMT_BGRA8888,       .drm = DRM_FORMAT_ARGB8888, .rga = RK_FORMAT_BGRA_8888},
 diff --git a/libavutil/hwcontext_drm.c b/libavutil/hwcontext_drm.c
-index 9210b6c9f5..32bf958c5d 100644
+index afdaabed1b..06d959bdb9 100644
 --- a/libavutil/hwcontext_drm.c
 +++ b/libavutil/hwcontext_drm.c
 @@ -138,6 +138,7 @@ static const struct {
@@ -4128,10 +4136,10 @@ index 46ef211add..b04975fba0 100644
  };
  
 -- 
-2.41.0
+2.43.0
 
 
-From 0e4b85d085cb8ce785185c92c91ba90411a20ed4 Mon Sep 17 00:00:00 2001
+From d041c3000f83be1e37a847df82995d21f5d70575 Mon Sep 17 00:00:00 2001
 From: boogie <boogiepop@gmx.com>
 Date: Mon, 31 Jul 2023 01:32:54 +0200
 Subject: [PATCH 13/13] give pixel descriptor to prevent crashes. descriptor
@@ -4165,5 +4173,5 @@ index 18c7a0efc8..3216dc19e3 100644
  #if FF_API_PLUS1_MINUS1
  FF_ENABLE_DEPRECATION_WARNINGS
 -- 
-2.41.0
+2.43.0
 
