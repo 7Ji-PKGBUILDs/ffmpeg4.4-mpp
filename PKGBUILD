@@ -77,7 +77,7 @@ depends=(
   xz
   zlib
   libdrm
-  mpp-git
+  mpp
   libyuv
   librga-multi
 )
